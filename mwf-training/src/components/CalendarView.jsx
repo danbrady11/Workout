@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ACTIVITY_TYPES, WORKOUT_TYPES } from '../data.js'
+import { ACTIVITY_TYPES, WORKOUT_TYPES, DAYS } from '../data.js'
 
 const ALL_TYPES = [
   ...WORKOUT_TYPES.map(t => ({ ...t, category: 'workout' })),
@@ -7,7 +7,7 @@ const ALL_TYPES = [
 ]
 
 function typeInfo(typeId) {
-  return ALL_TYPES.find(t => t.id === typeId) || { label: typeId, color: 'var(--muted)' }
+  return ALL_TYPES.find(t => t.id === typeId) || { label: typeId, color: 'var(--muted)', bg: 'var(--surface2)' }
 }
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -17,15 +17,54 @@ function toDateKey(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
-export default function CalendarView({ calendarData, onCalendarChange }) {
+function formatDate(key) {
+  if (!key) return ''
+  const [y, m, d] = key.split('-')
+  return `${MONTHS[parseInt(m) - 1]} ${parseInt(d)}, ${y}`
+}
+
+// Render a full workout session detail
+function SessionDetail({ dayKey, sessionData }) {
+  const day = DAYS[dayKey]
+  if (!day || !sessionData) return null
+  return (
+    <div style={sd.wrap}>
+      {day.exercises.map(ex => {
+        const data = sessionData[ex.id]
+        if (!data) return null
+        const done = data.doneSets || 0
+        const weight = data.weight || '—'
+        const reps = data.reps || ex.repsDefault
+        return (
+          <div key={ex.id} style={sd.row}>
+            <div style={sd.exName}>{ex.name}</div>
+            <div style={sd.exStats}>
+              <span style={sd.badge}>{done}×{reps} reps</span>
+              <span style={sd.badge}>{weight} lbs</span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+const sd = {
+  wrap: { marginTop: '0.75rem' },
+  row: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0', borderBottom: '1px solid var(--border)' },
+  exName: { fontSize: '0.8rem', fontWeight: 500, color: 'var(--text)' },
+  exStats: { display: 'flex', gap: '6px', flexShrink: 0 },
+  badge: { fontSize: '0.7rem', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 6px', color: 'var(--muted)', fontWeight: 500 },
+}
+
+export default function CalendarView({ calendarData, sessions, onCalendarChange }) {
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   const [selectedDate, setSelectedDate] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [editEntry, setEditEntry] = useState(null) // { type, notes }
+  const [editEntry, setEditEntry] = useState(null)
 
-  // Build calendar grid
   const firstDay = new Date(viewYear, viewMonth, 1).getDay()
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate()
   const cells = []
@@ -53,7 +92,7 @@ export default function CalendarView({ calendarData, onCalendarChange }) {
 
   function saveEntry() {
     if (!editEntry.type) return
-    onCalendarChange({ ...calendarData, [selectedDate]: editEntry })
+    onCalendarChange({ ...calendarData, [selectedDate]: { ...calendarData[selectedDate], ...editEntry } })
     setModalOpen(false)
   }
 
@@ -64,20 +103,24 @@ export default function CalendarView({ calendarData, onCalendarChange }) {
     setModalOpen(false)
   }
 
-  function formatSelectedDate(key) {
-    if (!key) return ''
-    const [y, m, d] = key.split('-')
-    return `${MONTHS[parseInt(m) - 1]} ${parseInt(d)}, ${y}`
+  const todayKey = toDateKey(today.getFullYear(), today.getMonth(), today.getDate())
+
+  // Get session for a date+dayType combo
+  function getSession(dateKey, dayType) {
+    return sessions?.[`${dateKey}-${dayType}`] || null
   }
 
-  const todayKey = toDateKey(today.getFullYear(), today.getMonth(), today.getDate())
+  const selectedEntry = selectedDate ? calendarData[selectedDate] : null
+  const selectedSession = selectedEntry?.type && ['monday','wednesday','friday'].includes(selectedEntry.type)
+    ? getSession(selectedDate, selectedEntry.type)
+    : null
 
   return (
     <div>
       {/* Month nav */}
       <div style={styles.calHeader}>
         <div style={styles.monthLabel}>{MONTHS[viewMonth]} {viewYear}</div>
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           <button style={styles.navBtn} onClick={prevMonth}>‹</button>
           <button style={styles.navBtn} onClick={nextMonth}>›</button>
         </div>
@@ -95,42 +138,38 @@ export default function CalendarView({ calendarData, onCalendarChange }) {
 
       {/* Grid */}
       <div style={styles.gridWrap}>
-        {/* DOW headers */}
         <div style={styles.dowRow}>
           {DOW.map(d => <div key={d} style={styles.dowCell}>{d}</div>)}
         </div>
-
-        {/* Day cells */}
         <div style={styles.dayGrid}>
           {cells.map((day, i) => {
-            if (!day) return <div key={`empty-${i}`} style={styles.emptyCell} />
+            if (!day) return <div key={`e-${i}`} />
             const key = toDateKey(viewYear, viewMonth, day)
             const entry = calendarData[key]
             const isToday = key === todayKey
             const info = entry ? typeInfo(entry.type) : null
-
             return (
               <div
                 key={key}
                 onClick={() => openDay(day)}
                 style={{
                   ...styles.dayCell,
-                  background: isToday ? 'var(--surface2)' : 'var(--surface)',
-                  border: isToday ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  background: isToday ? 'var(--accent-light)' : 'var(--surface)',
+                  border: isToday ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  boxShadow: isToday ? '0 0 0 0px' : 'var(--shadow)',
                 }}
               >
                 <div style={{
                   ...styles.dayNum,
                   color: isToday ? 'var(--accent)' : 'var(--text)',
-                  fontWeight: isToday ? 600 : 300,
+                  fontWeight: isToday ? 700 : 400,
                 }}>
                   {day}
                 </div>
                 {info && (
-                  <div style={{ ...styles.entryDot, background: info.color }} title={info.label} />
-                )}
-                {entry?.notes && (
-                  <div style={styles.noteDot} title={entry.notes}>·</div>
+                  <div style={{ ...styles.entryPill, background: info.bg, color: info.color }}>
+                    {info.label.slice(0, 3)}
+                  </div>
                 )}
               </div>
             )
@@ -140,38 +179,66 @@ export default function CalendarView({ calendarData, onCalendarChange }) {
 
       {/* Recent activity list */}
       <div style={styles.recentSection}>
-        <div style={styles.recentLabel}>Recent Activity</div>
+        <div style={styles.sectionLabel}>Recent Activity</div>
         {Object.entries(calendarData)
           .sort(([a], [b]) => b.localeCompare(a))
-          .slice(0, 8)
+          .slice(0, 10)
           .map(([key, entry]) => {
             const info = typeInfo(entry.type)
-            const [y, m, d] = key.split('-')
+            const [, m, d] = key.split('-')
             const dateStr = `${MONTHS[parseInt(m)-1].slice(0,3)} ${parseInt(d)}`
+            const sess = ['monday','wednesday','friday'].includes(entry.type) ? getSession(key, entry.type) : null
             return (
               <div key={key} style={styles.recentRow} onClick={() => { setSelectedDate(key); setEditEntry({ type: entry.type, notes: entry.notes || '' }); setModalOpen(true) }}>
-                <div style={{ ...styles.recentDot, background: info.color }} />
-                <div style={styles.recentDate}>{dateStr}</div>
-                <div style={{ ...styles.recentType, color: info.color }}>{info.label}</div>
-                {entry.notes && <div style={styles.recentNote}>{entry.notes}</div>}
+                <div style={{ ...styles.recentAccent, background: info.color }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.recentTop}>
+                    <span style={styles.recentDate}>{dateStr}</span>
+                    <span style={{ ...styles.recentType, color: info.color, background: info.bg }}>{info.label}</span>
+                  </div>
+                  {entry.notes && <div style={styles.recentNote}>{entry.notes}</div>}
+                  {sess && (
+                    <div style={styles.recentSets}>
+                      {DAYS[entry.type]?.exercises.map(ex => {
+                        const d = sess[ex.id]
+                        if (!d?.doneSets) return null
+                        return (
+                          <span key={ex.id} style={styles.miniSet}>
+                            {ex.name.split(' ').slice(-1)[0]}: {d.doneSets}×{d.reps||ex.repsDefault} @ {d.weight||'?'}lb
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}
         {Object.keys(calendarData).length === 0 && (
-          <div style={styles.emptyMsg}>No activity logged yet — tap a day to add one.</div>
+          <div style={styles.emptyMsg}>No activity logged yet — tap a day on the calendar to add one.</div>
         )}
       </div>
 
       {/* Modal */}
-      {modalOpen && (
+      {modalOpen && editEntry && (
         <div style={styles.overlay} onClick={() => setModalOpen(false)}>
           <div style={styles.modal} onClick={e => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <div style={styles.modalDate}>{formatSelectedDate(selectedDate)}</div>
+              <div style={styles.modalDate}>{formatDate(selectedDate)}</div>
               <button style={styles.closeBtn} onClick={() => setModalOpen(false)}>✕</button>
             </div>
 
             <div style={styles.modalBody}>
+              {/* If it's a saved workout, show session detail */}
+              {selectedSession && selectedEntry && (
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={styles.fieldLabel}>Workout Log</div>
+                  <div style={{ ...styles.sessionCard, borderColor: typeInfo(selectedEntry.type).color }}>
+                    <SessionDetail dayKey={selectedEntry.type} sessionData={selectedSession} />
+                  </div>
+                </div>
+              )}
+
               <div style={styles.fieldLabel}>Activity Type</div>
               <div style={styles.typeGrid}>
                 {ALL_TYPES.map(t => (
@@ -180,12 +247,13 @@ export default function CalendarView({ calendarData, onCalendarChange }) {
                     onClick={() => setEditEntry(e => ({ ...e, type: t.id }))}
                     style={{
                       ...styles.typeBtn,
-                      border: editEntry.type === t.id ? `1.5px solid ${t.color}` : '1px solid var(--border)',
+                      border: editEntry.type === t.id ? `2px solid ${t.color}` : '1.5px solid var(--border)',
                       color: editEntry.type === t.id ? t.color : 'var(--muted)',
-                      background: editEntry.type === t.id ? 'var(--surface2)' : 'var(--surface)',
+                      background: editEntry.type === t.id ? t.bg : 'var(--surface)',
+                      fontWeight: editEntry.type === t.id ? 700 : 500,
                     }}
                   >
-                    <div style={{ ...styles.typeBtnDot, background: t.color }} />
+                    <div style={{ ...styles.typeDot, background: t.color }} />
                     {t.label}
                   </button>
                 ))}
@@ -195,7 +263,7 @@ export default function CalendarView({ calendarData, onCalendarChange }) {
               <textarea
                 value={editEntry.notes}
                 onChange={e => setEditEntry(en => ({ ...en, notes: e.target.value }))}
-                placeholder="Weight used, distance, how it felt..."
+                placeholder="How it went, distance, PRs, how you felt..."
                 style={styles.textarea}
                 rows={3}
               />
@@ -227,6 +295,7 @@ const styles = {
     justifyContent: 'space-between',
     padding: '1.25rem 1.5rem',
     borderBottom: '1px solid var(--border)',
+    background: 'var(--surface)',
   },
   monthLabel: {
     fontFamily: 'var(--font-display)',
@@ -236,29 +305,29 @@ const styles = {
     letterSpacing: '0.05em',
   },
   navBtn: {
-    width: '34px', height: '34px',
+    width: '40px', height: '40px',
     background: 'var(--surface)',
-    border: '1px solid var(--border)',
+    border: '1.5px solid var(--border2)',
     color: 'var(--text)',
-    borderRadius: '4px',
-    fontSize: '1.2rem',
+    borderRadius: '8px',
+    fontSize: '1.3rem',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    transition: 'all 0.15s',
-    lineHeight: 1,
+    boxShadow: 'var(--shadow)',
   },
   legend: {
     display: 'flex',
-    gap: '12px',
-    padding: '0.75rem 1.5rem',
+    gap: '10px',
+    padding: '0.6rem 1.5rem',
     borderBottom: '1px solid var(--border)',
     flexWrap: 'wrap',
+    background: 'var(--surface)',
   },
   legItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '5px',
-    fontSize: '0.65rem',
-    letterSpacing: '0.08em',
+    gap: '4px',
+    fontSize: '0.62rem',
+    letterSpacing: '0.06em',
     textTransform: 'uppercase',
     color: 'var(--muted)',
   },
@@ -268,7 +337,8 @@ const styles = {
     flexShrink: 0,
   },
   gridWrap: {
-    padding: '1rem 1.5rem',
+    padding: '1rem 1.25rem',
+    background: 'var(--bg)',
   },
   dowRow: {
     display: 'grid',
@@ -278,7 +348,7 @@ const styles = {
   },
   dowCell: {
     textAlign: 'center',
-    fontSize: '0.6rem',
+    fontSize: '0.62rem',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
     color: 'var(--muted)',
@@ -289,98 +359,110 @@ const styles = {
     gridTemplateColumns: 'repeat(7, 1fr)',
     gap: '4px',
   },
-  emptyCell: {
-    height: '54px',
-  },
   dayCell: {
-    height: '54px',
-    borderRadius: '4px',
+    minHeight: '58px',
+    borderRadius: '8px',
     cursor: 'pointer',
-    padding: '6px',
+    padding: '5px 4px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     gap: '3px',
-    transition: 'border-color 0.15s',
-    position: 'relative',
+    transition: 'transform 0.1s',
   },
   dayNum: {
     fontFamily: 'var(--font-display)',
-    fontSize: '0.95rem',
+    fontSize: '1rem',
     lineHeight: 1,
   },
-  entryDot: {
-    width: '7px', height: '7px',
-    borderRadius: '50%',
-    flexShrink: 0,
-  },
-  noteDot: {
-    fontSize: '0.7rem',
-    color: 'var(--muted)',
-    lineHeight: 1,
+  entryPill: {
+    fontSize: '0.55rem',
+    fontWeight: 700,
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
+    padding: '1px 4px',
+    borderRadius: '3px',
   },
   recentSection: {
-    padding: '0 1.5rem 2rem',
-    borderTop: '1px solid var(--border)',
-    marginTop: '0.5rem',
+    padding: '0 1.25rem 2rem',
+    background: 'var(--bg)',
   },
-  recentLabel: {
+  sectionLabel: {
     fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: '0.65rem',
+    fontWeight: 700,
+    fontSize: '0.7rem',
     letterSpacing: '0.2em',
     textTransform: 'uppercase',
     color: 'var(--muted)',
     padding: '1rem 0 0.5rem',
+    borderBottom: '1px solid var(--border)',
+    marginBottom: '0.25rem',
   },
   recentRow: {
     display: 'flex',
-    alignItems: 'baseline',
     gap: '10px',
-    padding: '0.6rem 0',
+    padding: '0.75rem 0',
     borderBottom: '1px solid var(--border)',
     cursor: 'pointer',
+    alignItems: 'flex-start',
   },
-  recentDot: {
-    width: '7px', height: '7px',
-    borderRadius: '50%',
+  recentAccent: {
+    width: '3px',
+    borderRadius: '2px',
     flexShrink: 0,
-    marginTop: '2px',
+    alignSelf: 'stretch',
+    minHeight: '20px',
+  },
+  recentTop: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '3px',
   },
   recentDate: {
     fontFamily: 'var(--font-display)',
     fontWeight: 600,
-    fontSize: '0.9rem',
+    fontSize: '0.95rem',
     color: 'var(--muted)',
-    minWidth: '50px',
   },
   recentType: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: '0.9rem',
+    fontSize: '0.65rem',
+    fontWeight: 700,
+    letterSpacing: '0.08em',
     textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    minWidth: '80px',
+    padding: '2px 7px',
+    borderRadius: '4px',
   },
   recentNote: {
-    fontSize: '0.75rem',
+    fontSize: '0.78rem',
     color: 'var(--muted)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    flex: 1,
+    marginTop: '2px',
+  },
+  recentSets: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '4px',
+    marginTop: '5px',
+  },
+  miniSet: {
+    fontSize: '0.65rem',
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: '4px',
+    padding: '2px 6px',
+    color: 'var(--muted)',
   },
   emptyMsg: {
-    fontSize: '0.8rem',
+    fontSize: '0.85rem',
     color: 'var(--muted)',
-    padding: '1rem 0',
-    fontStyle: 'italic',
+    padding: '1.5rem 0',
+    textAlign: 'center',
   },
   // Modal
   overlay: {
     position: 'fixed',
     inset: 0,
-    background: 'rgba(0,0,0,0.7)',
+    background: 'rgba(0,0,0,0.4)',
     zIndex: 200,
     display: 'flex',
     alignItems: 'center',
@@ -389,11 +471,14 @@ const styles = {
   },
   modal: {
     background: 'var(--surface)',
-    border: '1px solid var(--border2)',
-    borderRadius: '8px',
+    border: '1px solid var(--border)',
+    borderRadius: '12px',
     width: '100%',
-    maxWidth: '420px',
+    maxWidth: '440px',
     overflow: 'hidden',
+    boxShadow: 'var(--shadow-md)',
+    maxHeight: '90vh',
+    overflowY: 'auto',
   },
   modalHeader: {
     display: 'flex',
@@ -401,6 +486,10 @@ const styles = {
     justifyContent: 'space-between',
     padding: '1.1rem 1.25rem',
     borderBottom: '1px solid var(--border)',
+    position: 'sticky',
+    top: 0,
+    background: 'var(--surface)',
+    zIndex: 1,
   },
   modalDate: {
     fontFamily: 'var(--font-display)',
@@ -410,22 +499,30 @@ const styles = {
     letterSpacing: '0.05em',
   },
   closeBtn: {
-    background: 'transparent',
-    border: 'none',
+    width: '32px', height: '32px',
+    background: 'var(--surface2)',
+    border: '1px solid var(--border)',
     color: 'var(--muted)',
-    fontSize: '1rem',
-    padding: '4px',
-    lineHeight: 1,
+    borderRadius: '6px',
+    fontSize: '0.9rem',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   modalBody: {
     padding: '1.25rem',
   },
+  sessionCard: {
+    background: 'var(--surface2)',
+    border: '1px solid',
+    borderRadius: '8px',
+    padding: '0.75rem 1rem',
+  },
   fieldLabel: {
-    fontSize: '0.6rem',
+    fontSize: '0.62rem',
     letterSpacing: '0.18em',
     textTransform: 'uppercase',
     color: 'var(--muted)',
     marginBottom: '0.6rem',
+    fontWeight: 600,
   },
   typeGrid: {
     display: 'grid',
@@ -433,11 +530,10 @@ const styles = {
     gap: '6px',
   },
   typeBtn: {
-    padding: '8px 6px',
-    borderRadius: '4px',
+    padding: '10px 6px',
+    borderRadius: '8px',
     fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: '0.75rem',
+    fontSize: '0.78rem',
     letterSpacing: '0.05em',
     textTransform: 'uppercase',
     display: 'flex',
@@ -446,20 +542,19 @@ const styles = {
     gap: '5px',
     transition: 'all 0.15s',
   },
-  typeBtnDot: {
+  typeDot: {
     width: '8px', height: '8px',
     borderRadius: '50%',
   },
   textarea: {
     width: '100%',
     background: 'var(--surface2)',
-    border: '1px solid var(--border2)',
-    borderRadius: '4px',
+    border: '1.5px solid var(--border2)',
+    borderRadius: '8px',
     color: 'var(--text)',
     fontFamily: 'var(--font-body)',
-    fontSize: '0.85rem',
-    fontWeight: 300,
-    padding: '0.6rem 0.75rem',
+    fontSize: '0.9rem',
+    padding: '0.65rem 0.75rem',
     outline: 'none',
     resize: 'vertical',
     lineHeight: 1.5,
@@ -471,26 +566,26 @@ const styles = {
     justifyContent: 'flex-end',
   },
   deleteBtn: {
-    padding: '0.6rem 1rem',
-    background: 'transparent',
-    border: '1px solid var(--other)',
+    padding: '0.7rem 1.1rem',
+    background: 'var(--other-light)',
+    border: '1.5px solid var(--other)',
     color: 'var(--other)',
-    borderRadius: '4px',
+    borderRadius: '8px',
     fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: '0.8rem',
+    fontWeight: 700,
+    fontSize: '0.85rem',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
   },
   saveBtn: {
-    padding: '0.6rem 1.5rem',
+    padding: '0.7rem 1.5rem',
     background: 'var(--accent)',
     border: 'none',
-    color: '#0e0e0e',
-    borderRadius: '4px',
+    color: '#fff',
+    borderRadius: '8px',
     fontFamily: 'var(--font-display)',
     fontWeight: 700,
-    fontSize: '0.85rem',
+    fontSize: '0.9rem',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
     transition: 'opacity 0.15s',

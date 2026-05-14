@@ -1,70 +1,98 @@
 import React from 'react'
-import { TAG_STYLES } from '../data.js'
+import { TAG_META } from '../data.js'
 
 export default function ExerciseRow({ exercise, sessionData, prevWeight, onChange }) {
-  const tag = TAG_STYLES[exercise.tag]
+  const tag = TAG_META[exercise.tag]
+
+  // weight: auto-prefill with prevWeight + 2.5 if no current value set
+  const suggestedWeight = prevWeight ? (parseFloat(prevWeight) + 2.5).toString() : ''
+  const weight = sessionData?.weight ?? suggestedWeight
+  const reps   = sessionData?.reps   ?? exercise.repsDefault.toString()
   const doneSets = sessionData?.doneSets || 0
-  const weight = sessionData?.weight || ''
+
+  function update(patch) {
+    onChange({ doneSets, weight, reps, ...sessionData, ...patch })
+  }
 
   function toggleDot(i) {
-    const current = doneSets
-    // clicking a done dot reverts to that index, clicking undone dot advances
-    const next = i < current ? i : i + 1
-    onChange({ doneSets: next, weight })
+    const next = i < doneSets ? i : i + 1
+    update({ doneSets: next })
   }
 
-  function handleWeight(e) {
-    onChange({ doneSets, weight: e.target.value })
-  }
+  const isAutoWeight = !sessionData?.weight && !!suggestedWeight
 
   return (
-    <div style={styles.row}>
-      {/* Left: name + meta */}
-      <div>
-        <div style={styles.name}>{exercise.name}</div>
-        <div style={styles.note}>{exercise.note}</div>
-        <span style={{ ...styles.tag, background: tag.bg, color: tag.color, border: `1px solid ${tag.border}` }}>
+    <div style={styles.card}>
+      {/* Exercise name + meta */}
+      <div style={styles.topRow}>
+        <div>
+          <div style={styles.name}>{exercise.name}</div>
+          <div style={styles.note}>{exercise.note}</div>
+        </div>
+        <span style={{ ...styles.tag, color: tag.color, background: tag.bg }}>
           {tag.label}
         </span>
       </div>
 
-      {/* Middle: sets/reps + dots */}
-      <div style={styles.setsCol}>
-        <div style={styles.setsNum}>{exercise.sets}</div>
-        <div style={styles.setsReps}>{exercise.reps}</div>
-        <div style={styles.dots}>
-          {Array.from({ length: exercise.sets }).map((_, i) => (
-            <div
-              key={i}
-              onClick={() => toggleDot(i)}
-              style={{
-                ...styles.dot,
-                background: i < doneSets ? 'var(--accent)' : 'transparent',
-                borderColor: i < doneSets ? 'var(--accent)' : 'var(--border2)',
-              }}
-            />
-          ))}
+      {/* Inputs row */}
+      <div style={styles.inputsRow}>
+        {/* Sets tracker */}
+        <div style={styles.inputGroup}>
+          <div style={styles.inputLabel}>Sets</div>
+          <div style={styles.dots}>
+            {Array.from({ length: exercise.sets }).map((_, i) => (
+              <button
+                key={i}
+                onClick={() => toggleDot(i)}
+                style={{
+                  ...styles.dot,
+                  background: i < doneSets ? 'var(--accent)' : 'var(--surface)',
+                  borderColor: i < doneSets ? 'var(--accent)' : 'var(--border2)',
+                  color: i < doneSets ? '#fff' : 'var(--muted)',
+                }}
+                aria-label={`Set ${i+1}`}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          <div style={styles.setsSub}>{doneSets}/{exercise.sets} done</div>
         </div>
-      </div>
 
-      {/* Right: weight input + prev */}
-      <div style={styles.weightCol}>
-        <div style={styles.weightWrap}>
+        {/* Reps */}
+        <div style={styles.inputGroup}>
+          <div style={styles.inputLabel}>Reps <span style={styles.rangeHint}>({exercise.repsRange})</span></div>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={reps}
+            onChange={e => update({ reps: e.target.value })}
+            style={styles.numInput}
+          />
+        </div>
+
+        {/* Weight */}
+        <div style={styles.inputGroup}>
+          <div style={styles.inputLabel}>Weight (lbs)</div>
           <input
             type="number"
             inputMode="decimal"
-            placeholder="lbs"
+            step="2.5"
             value={weight}
-            onChange={handleWeight}
-            style={styles.weightInput}
+            onChange={e => update({ weight: e.target.value })}
+            placeholder="0"
+            style={{
+              ...styles.numInput,
+              borderColor: isAutoWeight ? 'var(--accent)' : 'var(--border2)',
+              background: isAutoWeight ? 'var(--accent-light)' : 'var(--surface)',
+            }}
           />
-        </div>
-        <div style={styles.prevLabel}>
-          {prevWeight ? (
-            <>prev: <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{prevWeight} lbs</span></>
-          ) : (
-            <span style={{ color: 'var(--muted2)' }}>no history</span>
-          )}
+          <div style={styles.prevHint}>
+            {prevWeight
+              ? <span>Last: <strong>{prevWeight}</strong> → <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{suggestedWeight}</span></span>
+              : <span style={{ color: 'var(--muted2)' }}>No history yet</span>
+            }
+          </div>
         </div>
       </div>
     </div>
@@ -72,94 +100,108 @@ export default function ExerciseRow({ exercise, sessionData, prevWeight, onChang
 }
 
 const styles = {
-  row: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 90px 88px',
-    gap: '10px',
-    padding: '1rem 0',
-    borderBottom: '1px solid var(--border)',
-    alignItems: 'start',
+  card: {
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius)',
+    padding: '1rem',
+    marginBottom: '0.75rem',
+    boxShadow: 'var(--shadow)',
+  },
+  topRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '8px',
+    marginBottom: '1rem',
   },
   name: {
     fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: '1.05rem',
-    letterSpacing: '0.03em',
+    fontWeight: 700,
+    fontSize: '1.15rem',
+    letterSpacing: '0.02em',
     textTransform: 'uppercase',
+    color: 'var(--text)',
     lineHeight: 1.2,
   },
   note: {
-    fontSize: '0.72rem',
+    fontSize: '0.78rem',
     color: 'var(--muted)',
     marginTop: '3px',
     lineHeight: 1.4,
   },
   tag: {
-    display: 'inline-block',
-    fontSize: '0.58rem',
+    flexShrink: 0,
+    fontSize: '0.62rem',
     letterSpacing: '0.08em',
-    padding: '2px 5px',
-    borderRadius: '2px',
-    marginTop: '5px',
+    padding: '3px 8px',
+    borderRadius: '20px',
     textTransform: 'uppercase',
+    fontWeight: 600,
+  },
+  inputsRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr 1fr',
+    gap: '0.75rem',
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  inputLabel: {
+    fontSize: '0.62rem',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
     fontWeight: 500,
   },
-  setsCol: {
-    textAlign: 'center',
-  },
-  setsNum: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    fontSize: '1.3rem',
-    lineHeight: 1,
-  },
-  setsReps: {
-    fontSize: '0.65rem',
-    color: 'var(--muted)',
-    letterSpacing: '0.05em',
-    marginTop: '2px',
+  rangeHint: {
+    fontWeight: 400,
+    textTransform: 'none',
+    letterSpacing: 0,
+    fontSize: '0.6rem',
   },
   dots: {
     display: 'flex',
-    gap: '4px',
-    justifyContent: 'center',
+    gap: '5px',
     flexWrap: 'wrap',
-    marginTop: '8px',
   },
   dot: {
-    width: '16px',
-    height: '16px',
-    borderRadius: '50%',
+    width: '34px',
+    height: '34px',
+    borderRadius: '8px',
     border: '1.5px solid',
-    cursor: 'pointer',
+    fontFamily: 'var(--font-display)',
+    fontWeight: 700,
+    fontSize: '0.9rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     transition: 'all 0.15s',
     flexShrink: 0,
   },
-  weightCol: {
-    textAlign: 'center',
+  setsSub: {
+    fontSize: '0.62rem',
+    color: 'var(--muted)',
   },
-  weightWrap: {
-    display: 'flex',
-    justifyContent: 'center',
-  },
-  weightInput: {
-    width: '76px',
-    background: 'var(--surface2)',
-    border: '1px solid var(--border2)',
-    borderRadius: '4px',
+  numInput: {
+    width: '100%',
+    background: 'var(--surface)',
+    border: '1.5px solid var(--border2)',
+    borderRadius: '8px',
     color: 'var(--text)',
     fontFamily: 'var(--font-display)',
     fontWeight: 700,
-    fontSize: '1.2rem',
+    fontSize: '1.4rem',
     textAlign: 'center',
-    padding: '5px 4px',
+    padding: '8px 4px',
     outline: 'none',
-    transition: 'border-color 0.15s',
+    transition: 'border-color 0.15s, background 0.15s',
   },
-  prevLabel: {
-    fontSize: '0.62rem',
+  prevHint: {
+    fontSize: '0.65rem',
     color: 'var(--muted)',
-    marginTop: '5px',
-    whiteSpace: 'nowrap',
+    lineHeight: 1.4,
   },
 }

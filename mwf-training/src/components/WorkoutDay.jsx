@@ -1,45 +1,43 @@
 import React, { useMemo } from 'react'
 import ExerciseRow from './ExerciseRow.jsx'
 
-export default function WorkoutDay({ dayKey, dayData, todaySession, prevSession, onSessionChange, onFinish }) {
-  const { name, focus, color, tip, exercises } = dayData
+export default function WorkoutDay({ dayData, todaySession, prevSession, onSessionChange, onSaveToCalendar }) {
+  const { name, focus, color, colorLight, tip, exercises } = dayData
 
-  // total dots possible and done
-  const { totalDots, doneDots } = useMemo(() => {
+  const { totalSets, doneSets } = useMemo(() => {
     let total = 0, done = 0
     exercises.forEach(ex => {
       total += ex.sets
       done += Math.min(todaySession?.[ex.id]?.doneSets || 0, ex.sets)
     })
-    return { totalDots: total, doneDots: done }
+    return { totalSets: total, doneSets: done }
   }, [exercises, todaySession])
 
-  const pct = totalDots > 0 ? Math.round((doneDots / totalDots) * 100) : 0
+  const pct = totalSets > 0 ? Math.round((doneSets / totalSets) * 100) : 0
   const complete = pct === 100
 
   function handleExChange(exId, data) {
+    // autosave on every change
     onSessionChange({ ...todaySession, [exId]: data })
   }
 
   function handleReset() {
-    onSessionChange({})
-  }
-
-  function handleFinish() {
-    if (complete) onFinish()
+    if (window.confirm('Reset this session? All progress will be cleared.')) {
+      onSessionChange({})
+    }
   }
 
   return (
-    <div>
+    <div style={{ paddingBottom: '2rem' }}>
       {/* Hero */}
-      <div style={styles.hero}>
+      <div style={{ ...styles.hero, background: colorLight, borderColor: color + '33' }}>
         <div>
           <div style={{ ...styles.focus, color }}>{focus}</div>
           <div style={styles.title}>{name} Day</div>
         </div>
         <div style={styles.heroRight}>
-          <div style={styles.statNum}>~45</div>
-          <div style={styles.statLbl}>minutes</div>
+          <div style={{ ...styles.statNum, color }}>~45</div>
+          <div style={styles.statLbl}>min</div>
         </div>
       </div>
 
@@ -47,21 +45,18 @@ export default function WorkoutDay({ dayKey, dayData, todaySession, prevSession,
       <div style={styles.progWrap}>
         <div style={styles.progTop}>
           <span>Session progress</span>
-          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{pct}%</span>
+          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{pct}%  {doneSets}/{totalSets} sets</span>
         </div>
         <div style={styles.progTrack}>
           <div style={{ ...styles.progFill, width: `${pct}%` }} />
         </div>
+        {pct > 0 && pct < 100 && (
+          <div style={styles.autoSaveNote}>✓ Progress auto-saved</div>
+        )}
       </div>
 
-      {/* Column headers */}
+      {/* Exercises */}
       <div style={styles.exSection}>
-        <div style={styles.colHead}>
-          <span>Exercise</span>
-          <span style={{ textAlign: 'center' }}>Sets / Reps</span>
-          <span style={{ textAlign: 'center' }}>Weight</span>
-        </div>
-
         {exercises.map(ex => (
           <ExerciseRow
             key={ex.id}
@@ -76,14 +71,14 @@ export default function WorkoutDay({ dayKey, dayData, todaySession, prevSession,
       {/* Complete banner */}
       {complete && (
         <div style={styles.doneBanner}>
-          ✓ {name} Day Complete — Great work!
+          🎉 {name} Day Complete — Great work!
         </div>
       )}
 
-      {/* Finish / Save button */}
-      {complete && (
-        <button style={styles.finishBtn} onClick={handleFinish}>
-          Save to Calendar
+      {/* Save to calendar button — always visible once any sets are done */}
+      {doneSets > 0 && (
+        <button style={{ ...styles.saveBtn, background: complete ? 'var(--accent)' : 'var(--surface)', color: complete ? '#fff' : 'var(--accent)', border: '2px solid var(--accent)' }} onClick={onSaveToCalendar}>
+          {complete ? '✓ Save Session to Calendar' : 'Save Progress to Calendar'}
         </button>
       )}
 
@@ -94,7 +89,7 @@ export default function WorkoutDay({ dayKey, dayData, todaySession, prevSession,
 
       {/* Tip */}
       <div style={styles.tip}>
-        <strong style={styles.tipLabel}>Pro Tip</strong>
+        <strong style={{ ...styles.tipLabel, color }}>Pro Tip</strong>
         {tip}
       </div>
     </div>
@@ -103,16 +98,16 @@ export default function WorkoutDay({ dayKey, dayData, todaySession, prevSession,
 
 const styles = {
   hero: {
-    padding: '1.5rem',
-    borderBottom: '1px solid var(--border)',
+    padding: '1.25rem 1.5rem',
+    borderBottom: '1px solid',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   focus: {
     fontFamily: 'var(--font-display)',
-    fontSize: '0.65rem',
-    fontWeight: 500,
+    fontSize: '0.7rem',
+    fontWeight: 600,
     letterSpacing: '0.2em',
     textTransform: 'uppercase',
     marginBottom: '4px',
@@ -120,16 +115,16 @@ const styles = {
   title: {
     fontFamily: 'var(--font-display)',
     fontWeight: 900,
-    fontSize: 'clamp(1.8rem, 5vw, 2.8rem)',
+    fontSize: 'clamp(1.8rem, 5vw, 2.5rem)',
     textTransform: 'uppercase',
     lineHeight: 1,
+    color: 'var(--text)',
   },
   heroRight: { textAlign: 'right' },
   statNum: {
     fontFamily: 'var(--font-display)',
     fontWeight: 700,
     fontSize: '2rem',
-    color: 'var(--accent)',
     lineHeight: 1,
   },
   statLbl: {
@@ -146,100 +141,90 @@ const styles = {
   progTop: {
     display: 'flex',
     justifyContent: 'space-between',
-    fontSize: '0.65rem',
-    letterSpacing: '0.12em',
-    textTransform: 'uppercase',
+    fontSize: '0.7rem',
+    letterSpacing: '0.08em',
     color: 'var(--muted)',
-    marginBottom: '6px',
+    marginBottom: '8px',
   },
   progTrack: {
-    height: '2px',
+    height: '6px',
     background: 'var(--border)',
-    borderRadius: '2px',
+    borderRadius: '3px',
     overflow: 'hidden',
   },
   progFill: {
     height: '100%',
     background: 'var(--accent)',
-    borderRadius: '2px',
+    borderRadius: '3px',
     transition: 'width 0.3s ease',
   },
-  exSection: {
-    padding: '0 1.5rem',
+  autoSaveNote: {
+    fontSize: '0.65rem',
+    color: 'var(--accent)',
+    marginTop: '6px',
+    fontWeight: 500,
   },
-  colHead: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 90px 88px',
-    gap: '10px',
-    padding: '0.75rem 0 0.5rem',
-    fontSize: '0.6rem',
-    letterSpacing: '0.18em',
-    textTransform: 'uppercase',
-    color: 'var(--muted2)',
-    borderBottom: '1px solid var(--border)',
+  exSection: {
+    padding: '1rem 1.25rem 0',
   },
   doneBanner: {
-    margin: '1rem 1.5rem 0',
-    padding: '1rem 1.25rem',
-    background: 'var(--accent)',
-    color: '#0e0e0e',
-    fontFamily: 'var(--font-display)',
-    fontWeight: 900,
-    fontSize: '1.2rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    textAlign: 'center',
-    borderRadius: '4px',
-  },
-  finishBtn: {
-    display: 'block',
-    margin: '0.6rem 1.5rem 0',
-    padding: '0.65rem',
-    width: 'calc(100% - 3rem)',
-    background: 'var(--surface2)',
+    margin: '0.5rem 1.25rem 0',
+    padding: '1rem',
+    background: 'var(--accent-light)',
     border: '1px solid var(--accent)',
     color: 'var(--accent)',
     fontFamily: 'var(--font-display)',
     fontWeight: 700,
-    fontSize: '0.85rem',
-    letterSpacing: '0.15em',
+    fontSize: '1.2rem',
     textTransform: 'uppercase',
-    borderRadius: '4px',
-    transition: 'all 0.15s',
+    textAlign: 'center',
+    borderRadius: 'var(--radius)',
+  },
+  saveBtn: {
+    display: 'block',
+    margin: '0.75rem 1.25rem 0',
+    padding: '1rem',
+    width: 'calc(100% - 2.5rem)',
+    fontFamily: 'var(--font-display)',
+    fontWeight: 700,
+    fontSize: '1rem',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    borderRadius: 'var(--radius)',
+    transition: 'all 0.2s',
+    boxShadow: 'var(--shadow)',
   },
   resetBtn: {
     display: 'block',
-    margin: '0.6rem 1.5rem 0',
-    padding: '0.65rem',
-    width: 'calc(100% - 3rem)',
+    margin: '0.5rem 1.25rem 0',
+    padding: '0.85rem',
+    width: 'calc(100% - 2.5rem)',
     background: 'transparent',
-    border: '1px solid var(--border)',
+    border: '1.5px solid var(--border2)',
     color: 'var(--muted)',
     fontFamily: 'var(--font-display)',
     fontWeight: 600,
-    fontSize: '0.8rem',
-    letterSpacing: '0.15em',
+    fontSize: '0.9rem',
+    letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    borderRadius: '4px',
-    transition: 'all 0.15s',
+    borderRadius: 'var(--radius)',
   },
   tip: {
-    margin: '1.25rem 1.5rem 2.5rem',
+    margin: '1rem 1.25rem 0',
     padding: '0.9rem 1rem',
     borderLeft: '3px solid var(--accent)',
-    background: 'var(--surface)',
-    borderRadius: '0 4px 4px 0',
-    fontSize: '0.8rem',
-    color: 'var(--muted)',
+    background: 'var(--accent-light)',
+    borderRadius: '0 8px 8px 0',
+    fontSize: '0.82rem',
+    color: 'var(--text)',
     lineHeight: 1.6,
   },
   tipLabel: {
     display: 'block',
-    fontSize: '0.58rem',
+    fontSize: '0.6rem',
     letterSpacing: '0.2em',
     textTransform: 'uppercase',
-    color: 'var(--accent)',
     marginBottom: '4px',
-    fontWeight: 600,
+    fontWeight: 700,
   },
 }
