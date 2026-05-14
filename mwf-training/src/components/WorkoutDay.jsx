@@ -1,8 +1,11 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import ExerciseRow from './ExerciseRow.jsx'
+import RestTimer from './RestTimer.jsx'
+import SessionClock from './SessionClock.jsx'
 
 export default function WorkoutDay({ dayData, todaySession, prevSession, onSessionChange, onSaveToCalendar }) {
   const { name, focus, color, colorLight, tip, exercises } = dayData
+  const [restTrigger, setRestTrigger] = useState(0) // increments on each set complete
 
   const { totalSets, doneSets } = useMemo(() => {
     let total = 0, done = 0
@@ -17,8 +20,11 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
   const complete = pct === 100
 
   function handleExChange(exId, data) {
-    // autosave on every change
     onSessionChange({ ...todaySession, [exId]: data })
+  }
+
+  function handleSetComplete() {
+    setRestTrigger(t => t + 1)
   }
 
   function handleReset() {
@@ -45,7 +51,7 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
       <div style={styles.progWrap}>
         <div style={styles.progTop}>
           <span>Session progress</span>
-          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{pct}%  {doneSets}/{totalSets} sets</span>
+          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{pct}% · {doneSets}/{totalSets} sets</span>
         </div>
         <div style={styles.progTrack}>
           <div style={{ ...styles.progFill, width: `${pct}%` }} />
@@ -53,6 +59,14 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
         {pct > 0 && pct < 100 && (
           <div style={styles.autoSaveNote}>✓ Progress auto-saved</div>
         )}
+      </div>
+
+      {/* Session clock */}
+      <SessionClock />
+
+      {/* Rest timer — only shows when active */}
+      <div style={{ marginTop: '0.75rem' }}>
+        <RestTimer trigger={restTrigger} />
       </div>
 
       {/* Exercises */}
@@ -64,6 +78,7 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
             sessionData={todaySession?.[ex.id]}
             prevWeight={prevSession?.[ex.id]?.weight || null}
             onChange={(data) => handleExChange(ex.id, data)}
+            onSetComplete={handleSetComplete}
           />
         ))}
       </div>
@@ -75,19 +90,24 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
         </div>
       )}
 
-      {/* Save to calendar button — always visible once any sets are done */}
       {doneSets > 0 && (
-        <button style={{ ...styles.saveBtn, background: complete ? 'var(--accent)' : 'var(--surface)', color: complete ? '#fff' : 'var(--accent)', border: '2px solid var(--accent)' }} onClick={onSaveToCalendar}>
+        <button
+          style={{
+            ...styles.saveBtn,
+            background: complete ? 'var(--accent)' : 'var(--surface)',
+            color: complete ? '#fff' : 'var(--accent)',
+            border: '2px solid var(--accent)',
+          }}
+          onClick={onSaveToCalendar}
+        >
           {complete ? '✓ Save Session to Calendar' : 'Save Progress to Calendar'}
         </button>
       )}
 
-      {/* Reset */}
       <button style={styles.resetBtn} onClick={handleReset}>
         Reset Session
       </button>
 
-      {/* Tip */}
       <div style={styles.tip}>
         <strong style={{ ...styles.tipLabel, color }}>Pro Tip</strong>
         {tip}
@@ -165,7 +185,7 @@ const styles = {
     fontWeight: 500,
   },
   exSection: {
-    padding: '1rem 1.25rem 0',
+    padding: '0.75rem 1.25rem 0',
   },
   doneBanner: {
     margin: '0.5rem 1.25rem 0',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { ACTIVITY_TYPES, WORKOUT_TYPES, DAYS } from '../data.js'
 
 const ALL_TYPES = [
@@ -14,16 +14,33 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 function toDateKey(year, month, day) {
-  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
 }
-
 function formatDate(key) {
   if (!key) return ''
   const [y, m, d] = key.split('-')
-  return `${MONTHS[parseInt(m) - 1]} ${parseInt(d)}, ${y}`
+  return `${MONTHS[parseInt(m)-1]} ${parseInt(d)}, ${y}`
+}
+function fmtMins(mins) {
+  if (!mins) return '—'
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m ? `${h}h ${m}m` : `${h}h`
 }
 
-// Render a full workout session detail
+// Default duration for lifting sessions (minutes)
+const LIFT_DEFAULT_MINS = 45
+
+// Get week boundaries (Mon-Sun) for a date key
+function getWeekKey(dateKey) {
+  const d = new Date(dateKey + 'T12:00:00')
+  const day = d.getDay()
+  const diff = (day === 0 ? -6 : 1) - day
+  const mon = new Date(d); mon.setDate(d.getDate() + diff)
+  return mon.toISOString().slice(0, 10)
+}
+
 function SessionDetail({ dayKey, sessionData }) {
   const day = DAYS[dayKey]
   if (!day || !sessionData) return null
@@ -51,10 +68,10 @@ function SessionDetail({ dayKey, sessionData }) {
 
 const sd = {
   wrap: { marginTop: '0.75rem' },
-  row: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0', borderBottom: '1px solid var(--border)' },
-  exName: { fontSize: '0.8rem', fontWeight: 500, color: 'var(--text)' },
-  exStats: { display: 'flex', gap: '6px', flexShrink: 0 },
-  badge: { fontSize: '0.7rem', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 6px', color: 'var(--muted)', fontWeight: 500 },
+  row: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 0', borderBottom: '1px solid var(--border)' },
+  exName: { fontSize: '0.78rem', fontWeight: 500, color: 'var(--text)' },
+  exStats: { display: 'flex', gap: '5px', flexShrink: 0 },
+  badge: { fontSize: '0.68rem', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 6px', color: 'var(--muted)', fontWeight: 500 },
 }
 
 export default function CalendarView({ calendarData, sessions, onCalendarChange }) {
@@ -72,6 +89,8 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
   while (cells.length % 7 !== 0) cells.push(null)
 
+  const todayKey = toDateKey(today.getFullYear(), today.getMonth(), today.getDate())
+
   function prevMonth() {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11) }
     else setViewMonth(m => m - 1)
@@ -86,7 +105,10 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
     const key = toDateKey(viewYear, viewMonth, day)
     setSelectedDate(key)
     const existing = calendarData[key]
-    setEditEntry(existing ? { type: existing.type, notes: existing.notes || '' } : { type: '', notes: '' })
+    setEditEntry(existing
+      ? { type: existing.type, notes: existing.notes || '', duration: existing.duration || '' }
+      : { type: '', notes: '', duration: '' }
+    )
     setModalOpen(true)
   }
 
@@ -103,17 +125,37 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
     setModalOpen(false)
   }
 
-  const todayKey = toDateKey(today.getFullYear(), today.getMonth(), today.getDate())
-
-  // Get session for a date+dayType combo
   function getSession(dateKey, dayType) {
     return sessions?.[`${dateKey}-${dayType}`] || null
   }
+
+  // ── Time tallies ──────────────────────────────────────
+  const { weeklyMins, monthlyMins, thisWeekKey } = useMemo(() => {
+    // Current week (Mon-Sun)
+    const wk = getWeekKey(todayKey)
+    // Current month
+    const monthPrefix = todayKey.slice(0, 7)
+
+    let wMins = 0, mMins = 0
+
+    Object.entries(calendarData).forEach(([key, entry]) => {
+      const isWorkout = ['monday','wednesday','friday'].includes(entry.type)
+      const mins = entry.duration
+        ? parseInt(entry.duration)
+        : (isWorkout ? LIFT_DEFAULT_MINS : 0)
+
+      if (getWeekKey(key) === wk) wMins += mins
+      if (key.startsWith(monthPrefix)) mMins += mins
+    })
+
+    return { weeklyMins: wMins, monthlyMins: mMins, thisWeekKey: wk }
+  }, [calendarData, todayKey])
 
   const selectedEntry = selectedDate ? calendarData[selectedDate] : null
   const selectedSession = selectedEntry?.type && ['monday','wednesday','friday'].includes(selectedEntry.type)
     ? getSession(selectedDate, selectedEntry.type)
     : null
+  const isWorkoutType = editEntry && ['monday','wednesday','friday'].includes(editEntry.type)
 
   return (
     <div>
@@ -123,6 +165,22 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
         <div style={{ display: 'flex', gap: '8px' }}>
           <button style={styles.navBtn} onClick={prevMonth}>‹</button>
           <button style={styles.navBtn} onClick={nextMonth}>›</button>
+        </div>
+      </div>
+
+      {/* ── Time tallies ── */}
+      <div style={styles.tallies}>
+        <div style={styles.tallyCard}>
+          <div style={styles.tallyNum}>{fmtMins(weeklyMins)}</div>
+          <div style={styles.tallyLbl}>This week</div>
+        </div>
+        <div style={styles.tallyDivider} />
+        <div style={styles.tallyCard}>
+          <div style={styles.tallyNum}>{fmtMins(monthlyMins)}</div>
+          <div style={styles.tallyLbl}>{MONTHS[viewMonth].slice(0,3)} total</div>
+        </div>
+        <div style={styles.tallyNote}>
+          Lifting sessions counted at {LIFT_DEFAULT_MINS}min unless overridden
         </div>
       </div>
 
@@ -148,6 +206,7 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
             const entry = calendarData[key]
             const isToday = key === todayKey
             const info = entry ? typeInfo(entry.type) : null
+            const mins = entry?.duration ? parseInt(entry.duration) : (entry && ['monday','wednesday','friday'].includes(entry.type) ? LIFT_DEFAULT_MINS : null)
             return (
               <div
                 key={key}
@@ -156,14 +215,9 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
                   ...styles.dayCell,
                   background: isToday ? 'var(--accent-light)' : 'var(--surface)',
                   border: isToday ? '2px solid var(--accent)' : '1px solid var(--border)',
-                  boxShadow: isToday ? '0 0 0 0px' : 'var(--shadow)',
                 }}
               >
-                <div style={{
-                  ...styles.dayNum,
-                  color: isToday ? 'var(--accent)' : 'var(--text)',
-                  fontWeight: isToday ? 700 : 400,
-                }}>
+                <div style={{ ...styles.dayNum, color: isToday ? 'var(--accent)' : 'var(--text)', fontWeight: isToday ? 700 : 400 }}>
                   {day}
                 </div>
                 {info && (
@@ -171,13 +225,14 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
                     {info.label.slice(0, 3)}
                   </div>
                 )}
+                {mins && <div style={styles.minsLabel}>{fmtMins(mins)}</div>}
               </div>
             )
           })}
         </div>
       </div>
 
-      {/* Recent activity list */}
+      {/* Recent activity */}
       <div style={styles.recentSection}>
         <div style={styles.sectionLabel}>Recent Activity</div>
         {Object.entries(calendarData)
@@ -188,13 +243,16 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
             const [, m, d] = key.split('-')
             const dateStr = `${MONTHS[parseInt(m)-1].slice(0,3)} ${parseInt(d)}`
             const sess = ['monday','wednesday','friday'].includes(entry.type) ? getSession(key, entry.type) : null
+            const isWorkout = ['monday','wednesday','friday'].includes(entry.type)
+            const mins = entry.duration ? parseInt(entry.duration) : (isWorkout ? LIFT_DEFAULT_MINS : null)
             return (
-              <div key={key} style={styles.recentRow} onClick={() => { setSelectedDate(key); setEditEntry({ type: entry.type, notes: entry.notes || '' }); setModalOpen(true) }}>
+              <div key={key} style={styles.recentRow} onClick={() => { setSelectedDate(key); setEditEntry({ type: entry.type, notes: entry.notes || '', duration: entry.duration || '' }); setModalOpen(true) }}>
                 <div style={{ ...styles.recentAccent, background: info.color }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={styles.recentTop}>
                     <span style={styles.recentDate}>{dateStr}</span>
                     <span style={{ ...styles.recentType, color: info.color, background: info.bg }}>{info.label}</span>
+                    {mins && <span style={styles.recentMins}>{fmtMins(mins)}</span>}
                   </div>
                   {entry.notes && <div style={styles.recentNote}>{entry.notes}</div>}
                   {sess && (
@@ -215,7 +273,7 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
             )
           })}
         {Object.keys(calendarData).length === 0 && (
-          <div style={styles.emptyMsg}>No activity logged yet — tap a day on the calendar to add one.</div>
+          <div style={styles.emptyMsg}>No activity logged yet — tap a day to add one.</div>
         )}
       </div>
 
@@ -229,7 +287,7 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
             </div>
 
             <div style={styles.modalBody}>
-              {/* If it's a saved workout, show session detail */}
+              {/* Workout log detail */}
               {selectedSession && selectedEntry && (
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div style={styles.fieldLabel}>Workout Log</div>
@@ -258,6 +316,20 @@ export default function CalendarView({ calendarData, sessions, onCalendarChange 
                   </button>
                 ))}
               </div>
+
+              {/* Duration field */}
+              <div style={{ ...styles.fieldLabel, marginTop: '1.25rem' }}>
+                Duration (minutes)
+                {isWorkoutType && <span style={styles.durationHint}> — defaults to {LIFT_DEFAULT_MINS}min if left blank</span>}
+              </div>
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder={isWorkoutType ? `${LIFT_DEFAULT_MINS}` : 'e.g. 60'}
+                value={editEntry.duration}
+                onChange={e => setEditEntry(en => ({ ...en, duration: e.target.value }))}
+                style={styles.durationInput}
+              />
 
               <div style={{ ...styles.fieldLabel, marginTop: '1.25rem' }}>Notes</div>
               <textarea
@@ -313,6 +385,51 @@ const styles = {
     fontSize: '1.3rem',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     boxShadow: 'var(--shadow)',
+    cursor: 'pointer',
+  },
+  // ── Tallies ──
+  tallies: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0',
+    background: 'var(--surface)',
+    borderBottom: '1px solid var(--border)',
+    padding: '1rem 1.5rem',
+    flexWrap: 'wrap',
+    rowGap: '0.5rem',
+  },
+  tallyCard: {
+    textAlign: 'center',
+    flex: '0 0 auto',
+    padding: '0 1.25rem',
+  },
+  tallyNum: {
+    fontFamily: 'var(--font-display)',
+    fontWeight: 900,
+    fontSize: '2rem',
+    color: 'var(--accent)',
+    lineHeight: 1,
+  },
+  tallyLbl: {
+    fontSize: '0.62rem',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+    marginTop: '2px',
+  },
+  tallyDivider: {
+    width: '1px',
+    height: '40px',
+    background: 'var(--border)',
+    flexShrink: 0,
+  },
+  tallyNote: {
+    fontSize: '0.62rem',
+    color: 'var(--muted2)',
+    marginLeft: 'auto',
+    maxWidth: '160px',
+    lineHeight: 1.4,
+    textAlign: 'right',
   },
   legend: {
     display: 'flex',
@@ -331,21 +448,9 @@ const styles = {
     textTransform: 'uppercase',
     color: 'var(--muted)',
   },
-  legDot: {
-    width: '7px', height: '7px',
-    borderRadius: '50%',
-    flexShrink: 0,
-  },
-  gridWrap: {
-    padding: '1rem 1.25rem',
-    background: 'var(--bg)',
-  },
-  dowRow: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '4px',
-    marginBottom: '4px',
-  },
+  legDot: { width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0 },
+  gridWrap: { padding: '1rem 1.25rem', background: 'var(--bg)' },
+  dowRow: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '4px' },
   dowCell: {
     textAlign: 'center',
     fontSize: '0.62rem',
@@ -354,20 +459,16 @@ const styles = {
     color: 'var(--muted)',
     padding: '4px 0',
   },
-  dayGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '4px',
-  },
+  dayGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' },
   dayCell: {
-    minHeight: '58px',
+    minHeight: '62px',
     borderRadius: '8px',
     cursor: 'pointer',
     padding: '5px 4px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '3px',
+    gap: '2px',
     transition: 'transform 0.1s',
   },
   dayNum: {
@@ -376,17 +477,20 @@ const styles = {
     lineHeight: 1,
   },
   entryPill: {
-    fontSize: '0.55rem',
+    fontSize: '0.52rem',
     fontWeight: 700,
     letterSpacing: '0.05em',
     textTransform: 'uppercase',
     padding: '1px 4px',
     borderRadius: '3px',
   },
-  recentSection: {
-    padding: '0 1.25rem 2rem',
-    background: 'var(--bg)',
+  minsLabel: {
+    fontSize: '0.55rem',
+    color: 'var(--muted)',
+    fontWeight: 500,
   },
+  // Recent
+  recentSection: { padding: '0 1.25rem 2rem', background: 'var(--bg)' },
   sectionLabel: {
     fontFamily: 'var(--font-display)',
     fontWeight: 700,
@@ -406,188 +510,66 @@ const styles = {
     cursor: 'pointer',
     alignItems: 'flex-start',
   },
-  recentAccent: {
-    width: '3px',
-    borderRadius: '2px',
-    flexShrink: 0,
-    alignSelf: 'stretch',
-    minHeight: '20px',
-  },
-  recentTop: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '3px',
-  },
-  recentDate: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: '0.95rem',
-    color: 'var(--muted)',
-  },
-  recentType: {
-    fontSize: '0.65rem',
-    fontWeight: 700,
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
-    padding: '2px 7px',
-    borderRadius: '4px',
-  },
-  recentNote: {
-    fontSize: '0.78rem',
-    color: 'var(--muted)',
-    marginTop: '2px',
-  },
-  recentSets: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '4px',
-    marginTop: '5px',
-  },
-  miniSet: {
-    fontSize: '0.65rem',
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: '4px',
-    padding: '2px 6px',
-    color: 'var(--muted)',
-  },
-  emptyMsg: {
-    fontSize: '0.85rem',
-    color: 'var(--muted)',
-    padding: '1.5rem 0',
-    textAlign: 'center',
-  },
+  recentAccent: { width: '3px', borderRadius: '2px', flexShrink: 0, alignSelf: 'stretch', minHeight: '20px' },
+  recentTop: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' },
+  recentDate: { fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: '0.95rem', color: 'var(--muted)' },
+  recentType: { fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: '4px' },
+  recentMins: { fontSize: '0.7rem', color: 'var(--muted)', fontWeight: 500, marginLeft: 'auto' },
+  recentNote: { fontSize: '0.78rem', color: 'var(--muted)', marginTop: '2px' },
+  recentSets: { display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '5px' },
+  miniSet: { fontSize: '0.65rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 6px', color: 'var(--muted)' },
+  emptyMsg: { fontSize: '0.85rem', color: 'var(--muted)', padding: '1.5rem 0', textAlign: 'center' },
   // Modal
   overlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.4)',
-    zIndex: 200,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '1rem',
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+    zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
   },
   modal: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: '12px',
-    width: '100%',
-    maxWidth: '440px',
-    overflow: 'hidden',
-    boxShadow: 'var(--shadow-md)',
-    maxHeight: '90vh',
-    overflowY: 'auto',
+    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px',
+    width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: 'var(--shadow-md)',
+    maxHeight: '90vh', overflowY: 'auto',
   },
   modalHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '1.1rem 1.25rem',
-    borderBottom: '1px solid var(--border)',
-    position: 'sticky',
-    top: 0,
-    background: 'var(--surface)',
-    zIndex: 1,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '1.1rem 1.25rem', borderBottom: '1px solid var(--border)',
+    position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1,
   },
-  modalDate: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    fontSize: '1.2rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  },
+  modalDate: { fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em' },
   closeBtn: {
-    width: '32px', height: '32px',
-    background: 'var(--surface2)',
-    border: '1px solid var(--border)',
-    color: 'var(--muted)',
-    borderRadius: '6px',
-    fontSize: '0.9rem',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: '32px', height: '32px', background: 'var(--surface2)', border: '1px solid var(--border)',
+    color: 'var(--muted)', borderRadius: '6px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
   },
-  modalBody: {
-    padding: '1.25rem',
-  },
-  sessionCard: {
-    background: 'var(--surface2)',
-    border: '1px solid',
-    borderRadius: '8px',
-    padding: '0.75rem 1rem',
-  },
-  fieldLabel: {
-    fontSize: '0.62rem',
-    letterSpacing: '0.18em',
-    textTransform: 'uppercase',
-    color: 'var(--muted)',
-    marginBottom: '0.6rem',
-    fontWeight: 600,
-  },
-  typeGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '6px',
-  },
-  typeBtn: {
-    padding: '10px 6px',
-    borderRadius: '8px',
-    fontFamily: 'var(--font-display)',
-    fontSize: '0.78rem',
-    letterSpacing: '0.05em',
-    textTransform: 'uppercase',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '5px',
-    transition: 'all 0.15s',
-  },
-  typeDot: {
-    width: '8px', height: '8px',
-    borderRadius: '50%',
-  },
-  textarea: {
-    width: '100%',
-    background: 'var(--surface2)',
-    border: '1.5px solid var(--border2)',
-    borderRadius: '8px',
-    color: 'var(--text)',
-    fontFamily: 'var(--font-body)',
-    fontSize: '0.9rem',
-    padding: '0.65rem 0.75rem',
+  modalBody: { padding: '1.25rem' },
+  sessionCard: { background: 'var(--surface2)', border: '1px solid', borderRadius: '8px', padding: '0.75rem 1rem' },
+  fieldLabel: { fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '0.6rem', fontWeight: 600 },
+  durationHint: { fontSize: '0.6rem', fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--muted2)' },
+  durationInput: {
+    width: '100%', background: 'var(--surface2)', border: '1.5px solid var(--border2)',
+    borderRadius: '8px', color: 'var(--text)', fontFamily: 'var(--font-display)',
+    fontWeight: 700, fontSize: '1.5rem', textAlign: 'center', padding: '10px',
     outline: 'none',
-    resize: 'vertical',
-    lineHeight: 1.5,
   },
-  modalActions: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '1rem',
-    justifyContent: 'flex-end',
+  typeGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' },
+  typeBtn: {
+    padding: '10px 6px', borderRadius: '8px', fontFamily: 'var(--font-display)',
+    fontSize: '0.78rem', letterSpacing: '0.05em', textTransform: 'uppercase',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px', transition: 'all 0.15s', cursor: 'pointer',
   },
+  typeDot: { width: '8px', height: '8px', borderRadius: '50%' },
+  textarea: {
+    width: '100%', background: 'var(--surface2)', border: '1.5px solid var(--border2)',
+    borderRadius: '8px', color: 'var(--text)', fontFamily: 'var(--font-body)',
+    fontSize: '0.9rem', padding: '0.65rem 0.75rem', outline: 'none', resize: 'vertical', lineHeight: 1.5,
+  },
+  modalActions: { display: 'flex', gap: '8px', marginTop: '1rem', justifyContent: 'flex-end' },
   deleteBtn: {
-    padding: '0.7rem 1.1rem',
-    background: 'var(--other-light)',
-    border: '1.5px solid var(--other)',
-    color: 'var(--other)',
-    borderRadius: '8px',
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    fontSize: '0.85rem',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase',
+    padding: '0.7rem 1.1rem', background: 'var(--other-light)', border: '1.5px solid var(--other)',
+    color: 'var(--other)', borderRadius: '8px', fontFamily: 'var(--font-display)',
+    fontWeight: 700, fontSize: '0.85rem', letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer',
   },
   saveBtn: {
-    padding: '0.7rem 1.5rem',
-    background: 'var(--accent)',
-    border: 'none',
-    color: '#fff',
-    borderRadius: '8px',
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    fontSize: '0.9rem',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase',
-    transition: 'opacity 0.15s',
+    padding: '0.7rem 1.5rem', background: 'var(--accent)', border: 'none', color: '#fff',
+    borderRadius: '8px', fontFamily: 'var(--font-display)', fontWeight: 700,
+    fontSize: '0.9rem', letterSpacing: '0.1em', textTransform: 'uppercase', transition: 'opacity 0.15s', cursor: 'pointer',
   },
 }

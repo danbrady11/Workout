@@ -1,13 +1,12 @@
 import React from 'react'
 import { TAG_META } from '../data.js'
 
-export default function ExerciseRow({ exercise, sessionData, prevWeight, onChange }) {
+export default function ExerciseRow({ exercise, sessionData, prevWeight, onChange, onSetComplete }) {
   const tag = TAG_META[exercise.tag]
 
-  // weight: auto-prefill with prevWeight + 2.5 if no current value set
   const suggestedWeight = prevWeight ? (parseFloat(prevWeight) + 2.5).toString() : ''
-  const weight = sessionData?.weight ?? suggestedWeight
-  const reps   = sessionData?.reps   ?? exercise.repsDefault.toString()
+  const weight   = sessionData?.weight   ?? suggestedWeight
+  const reps     = sessionData?.reps     ?? exercise.repsDefault.toString()
   const doneSets = sessionData?.doneSets || 0
 
   function update(patch) {
@@ -16,14 +15,15 @@ export default function ExerciseRow({ exercise, sessionData, prevWeight, onChang
 
   function toggleDot(i) {
     const next = i < doneSets ? i : i + 1
+    const wasIncrement = next > doneSets
     update({ doneSets: next })
+    if (wasIncrement) onSetComplete() // fires rest timer
   }
 
   const isAutoWeight = !sessionData?.weight && !!suggestedWeight
 
   return (
     <div style={styles.card}>
-      {/* Exercise name + meta */}
       <div style={styles.topRow}>
         <div>
           <div style={styles.name}>{exercise.name}</div>
@@ -34,9 +34,8 @@ export default function ExerciseRow({ exercise, sessionData, prevWeight, onChang
         </span>
       </div>
 
-      {/* Inputs row */}
       <div style={styles.inputsRow}>
-        {/* Sets tracker */}
+        {/* Sets */}
         <div style={styles.inputGroup}>
           <div style={styles.inputLabel}>Sets</div>
           <div style={styles.dots}>
@@ -162,11 +161,7 @@ const styles = {
     letterSpacing: 0,
     fontSize: '0.6rem',
   },
-  dots: {
-    display: 'flex',
-    gap: '5px',
-    flexWrap: 'wrap',
-  },
+  dots: { display: 'flex', gap: '5px', flexWrap: 'wrap' },
   dot: {
     width: '34px',
     height: '34px',
@@ -181,10 +176,7 @@ const styles = {
     transition: 'all 0.15s',
     flexShrink: 0,
   },
-  setsSub: {
-    fontSize: '0.62rem',
-    color: 'var(--muted)',
-  },
+  setsSub: { fontSize: '0.62rem', color: 'var(--muted)' },
   numInput: {
     width: '100%',
     background: 'var(--surface)',
