@@ -125,66 +125,63 @@ export default function App() {
         </div>
       </header>
 
-      {/* Workout view */}
-      {activeView === 'workout' && (
-        <div>
-          <div style={styles.dayTabs}>
-            {DAY_KEYS.map(dk => {
-              const d = DAYS[dk]
-              const isActive = activeDay === dk
-              const color = dk === 'monday' ? 'var(--push)' : dk === 'wednesday' ? 'var(--pull)' : 'var(--legs)'
-              const colorLight = dk === 'monday' ? 'var(--push-light)' : dk === 'wednesday' ? 'var(--pull-light)' : 'var(--legs-light)'
-              // count done sets for badge
-              const sess = sessions[`${todayKey}-${dk}`] || {}
-              const done = DAYS[dk].exercises.reduce((sum, ex) => sum + (sess[ex.id]?.doneSets || 0), 0)
-              const total = DAYS[dk].exercises.reduce((sum, ex) => sum + ex.sets, 0)
-              return (
-                <button
-                  key={dk}
-                  onClick={() => setActiveDay(dk)}
-                  style={{
-                    ...styles.dayTab,
-                    color: isActive ? color : 'var(--muted)',
-                    background: isActive ? colorLight : 'var(--surface)',
-                    borderBottom: isActive ? `3px solid ${color}` : '3px solid transparent',
-                    boxShadow: isActive ? 'var(--shadow)' : 'none',
-                  }}
-                >
-                  <span style={styles.dayTabLabel}>{d.label}</span>
-                  <span style={{ ...styles.dayTabName, color: isActive ? color : 'var(--text)' }}>{d.name}</span>
-                  {done > 0 && (
-                    <span style={{ ...styles.dayBadge, background: color, color: '#fff' }}>
-                      {done}/{total}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-
-          <WorkoutDay
-            dayData={dayData}
-            todaySession={todaySession}
-            prevSession={prevSession}
-            onSessionChange={(data) => handleSessionChange(activeDay, data)}
-            onSaveToCalendar={() => handleSaveToCalendar(activeDay)}
-            clockRunning={clockRunning}
-            clockElapsed={clockElapsed}
-            onClockStart={clockStart}
-            onClockPause={clockPause}
-            onClockReset={clockReset}
-          />
+      {/* Workout view — always mounted, hidden via CSS so clock never unmounts */}
+      <div style={{ display: activeView === 'workout' ? 'block' : 'none' }}>
+        <div style={styles.dayTabs}>
+          {DAY_KEYS.map(dk => {
+            const d = DAYS[dk]
+            const isActive = activeDay === dk
+            const color = dk === 'monday' ? 'var(--push)' : dk === 'wednesday' ? 'var(--pull)' : 'var(--legs)'
+            const colorLight = dk === 'monday' ? 'var(--push-light)' : dk === 'wednesday' ? 'var(--pull-light)' : 'var(--legs-light)'
+            const sess = sessions[`${todayKey}-${dk}`] || {}
+            const done = DAYS[dk].exercises.reduce((sum, ex) => sum + (sess[ex.id]?.doneSets || 0), 0)
+            const total = DAYS[dk].exercises.reduce((sum, ex) => sum + ex.sets, 0)
+            return (
+              <button
+                key={dk}
+                onClick={() => setActiveDay(dk)}
+                style={{
+                  ...styles.dayTab,
+                  color: isActive ? color : 'var(--muted)',
+                  background: isActive ? colorLight : 'var(--surface)',
+                  borderBottom: isActive ? `3px solid ${color}` : '3px solid transparent',
+                  boxShadow: isActive ? 'var(--shadow)' : 'none',
+                }}
+              >
+                <span style={styles.dayTabLabel}>{d.label}</span>
+                <span style={{ ...styles.dayTabName, color: isActive ? color : 'var(--text)' }}>{d.name}</span>
+                {done > 0 && (
+                  <span style={{ ...styles.dayBadge, background: color, color: '#fff' }}>
+                    {done}/{total}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
-      )}
 
-      {/* Calendar view */}
-      {activeView === 'calendar' && (
+        <WorkoutDay
+          dayData={dayData}
+          todaySession={todaySession}
+          prevSession={prevSession}
+          onSessionChange={(data) => handleSessionChange(activeDay, data)}
+          onSaveToCalendar={() => handleSaveToCalendar(activeDay)}
+          clockRunning={clockRunning}
+          clockElapsed={clockElapsed}
+          onClockStart={clockStart}
+          onClockPause={clockPause}
+          onClockReset={clockReset}
+        />
+      </div>
+
+      {/* Calendar view — always mounted too */}
+      <div style={{ display: activeView === 'calendar' ? 'block' : 'none' }}>
         <CalendarView
           calendarData={calendar}
           sessions={sessions}
           onCalendarChange={setCalendar}
         />
-      )}
+      </div>
     </div>
   )
 }
