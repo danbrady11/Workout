@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { DAYS } from './data.js'
 import { useLocalStorage } from './useLocalStorage.js'
 import WorkoutDay from './components/WorkoutDay.jsx'
@@ -31,6 +31,32 @@ export default function App() {
   // calendar: { 'YYYY-MM-DD': { type, notes } }
   const [calendar, setCalendar] = useLocalStorage('mwf_calendar', {})
 
+  // Session clock — lives here so it survives tab switches
+  const [clockRunning, setClockRunning] = useState(false)
+  const [clockElapsed, setClockElapsed] = useState(0)
+  const clockRef = useRef(null)
+  const clockBase = useRef(null) // timestamp when clock was last started
+
+  function clockStart() {
+    const base = Date.now() - clockElapsed * 1000
+    clockBase.current = base
+    setClockRunning(true)
+    clockRef.current = setInterval(() => {
+      setClockElapsed(Math.floor((Date.now() - base) / 1000))
+    }, 1000)
+  }
+  function clockPause() {
+    clearInterval(clockRef.current)
+    setClockRunning(false)
+  }
+  function clockReset() {
+    clearInterval(clockRef.current)
+    setClockRunning(false)
+    setClockElapsed(0)
+    clockBase.current = null
+  }
+  useEffect(() => () => clearInterval(clockRef.current), [])
+
   const todayKey = toDateKey(new Date())
   const sessionKey = `${todayKey}-${activeDay}`
 
@@ -59,6 +85,7 @@ export default function App() {
         notes: existing?.notes || '',
       }
     }))
+    clockReset()
     setActiveView('calendar')
   }
 
@@ -131,6 +158,11 @@ export default function App() {
             prevSession={prevSession}
             onSessionChange={(data) => handleSessionChange(activeDay, data)}
             onSaveToCalendar={() => handleSaveToCalendar(activeDay)}
+            clockRunning={clockRunning}
+            clockElapsed={clockElapsed}
+            onClockStart={clockStart}
+            onClockPause={clockPause}
+            onClockReset={clockReset}
           />
         </div>
       )}
