@@ -31,31 +31,42 @@ export default function App() {
   // calendar: { 'YYYY-MM-DD': { type, notes } }
   const [calendar, setCalendar] = useLocalStorage('mwf_calendar', {})
 
-  // Session clock — lives here so it survives tab switches
-  const [clockRunning, setClockRunning] = useState(false)
-  const [clockElapsed, setClockElapsed] = useState(0)
-  const clockRef = useRef(null)
-  const clockBase = useRef(null) // timestamp when clock was last started
+  // Session clock — timestamp-based so it never loses time between renders
+  // clockStartedAt = epoch ms when clock was started (null = not running)
+  // clockAccum = seconds accumulated before last pause
+  const [clockStartedAt, setClockStartedAt] = useState(null)
+  const [clockAccum, setClockAccum] = useState(0)
+  const clockTickRef = useRef(null)
+
+  // Derived: current elapsed seconds
+  const clockElapsed = clockStartedAt
+    ? clockAccum + Math.floor((Date.now() - clockStartedAt) / 1000)
+    : clockAccum
+
+  const clockRunning = clockStartedAt !== null
+
+  // Force a re-render every second while running
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (clockRunning) {
+      clockTickRef.current = setInterval(() => setTick(t => t + 1), 1000)
+    } else {
+      clearInterval(clockTickRef.current)
+    }
+    return () => clearInterval(clockTickRef.current)
+  }, [clockRunning])
 
   function clockStart() {
-    const base = Date.now() - clockElapsed * 1000
-    clockBase.current = base
-    setClockRunning(true)
-    clockRef.current = setInterval(() => {
-      setClockElapsed(Math.floor((Date.now() - base) / 1000))
-    }, 1000)
+    setClockStartedAt(Date.now())
   }
   function clockPause() {
-    clearInterval(clockRef.current)
-    setClockRunning(false)
+    setClockAccum(clockElapsed)
+    setClockStartedAt(null)
   }
   function clockReset() {
-    clearInterval(clockRef.current)
-    setClockRunning(false)
-    setClockElapsed(0)
-    clockBase.current = null
+    setClockStartedAt(null)
+    setClockAccum(0)
   }
-  useEffect(() => () => clearInterval(clockRef.current), [])
 
   const todayKey = toDateKey(new Date())
   const sessionKey = `${todayKey}-${activeDay}`
@@ -152,7 +163,6 @@ export default function App() {
           </div>
 
           <WorkoutDay
-            key={activeDay}
             dayData={dayData}
             todaySession={todaySession}
             prevSession={prevSession}
