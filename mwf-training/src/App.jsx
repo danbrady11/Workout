@@ -1,21 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { DAYS } from './data.js'
 import { useLocalStorage } from './useLocalStorage.js'
 import WorkoutDay from './components/WorkoutDay.jsx'
 import CalendarView from './components/CalendarView.jsx'
 
-const DAY_KEYS = ['monday', 'wednesday', 'friday']
-
-function getTodayDayKey() {
-  const d = new Date().getDay()
-  if (d === 1) return 'monday'
-  if (d === 3) return 'wednesday'
-  if (d === 5) return 'friday'
-  return 'monday'
-}
-
 function toDateKey(date) {
-  // Use local date, not UTC
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
@@ -24,29 +12,22 @@ function toDateKey(date) {
 
 export default function App() {
   const [activeView, setActiveView] = useState('workout')
-  const [activeDay, setActiveDay] = useState(getTodayDayKey())
 
-  // sessions: { 'YYYY-MM-DD-monday': { exId: { doneSets, weight, reps } } }
-  const [sessions, setSessions] = useLocalStorage('mwf_sessions', {})
-  // calendar: { 'YYYY-MM-DD': { type, notes } }
+  // sessions: { 'YYYY-MM-DD': { exId: { doneSets, weight, reps }, _finisher: {...} } }
+  const [sessions, setSessions] = useLocalStorage('mwf_sessions_v2', {})
   const [calendar, setCalendar] = useLocalStorage('mwf_calendar', {})
 
-  // Session clock — timestamp-based so it never loses time between renders
-  // clockStartedAt = epoch ms when clock was started (null = not running)
-  // clockAccum = seconds accumulated before last pause
+  // Clock state — lives here so it survives tab switches
   const [clockStartedAt, setClockStartedAt] = useState(null)
   const [clockAccum, setClockAccum] = useState(0)
   const clockTickRef = useRef(null)
+  const [, setTick] = useState(0)
 
-  // Derived: current elapsed seconds
+  const clockRunning = clockStartedAt !== null
   const clockElapsed = clockStartedAt
     ? clockAccum + Math.floor((Date.now() - clockStartedAt) / 1000)
     : clockAccum
 
-  const clockRunning = clockStartedAt !== null
-
-  // Force a re-render every second while running
-  const [, setTick] = useState(0)
   useEffect(() => {
     if (clockRunning) {
       clockTickRef.current = setInterval(() => setTick(t => t + 1), 1000)
@@ -56,59 +37,45 @@ export default function App() {
     return () => clearInterval(clockTickRef.current)
   }, [clockRunning])
 
-  function clockStart() {
-    setClockStartedAt(Date.now())
-  }
-  function clockPause() {
-    setClockAccum(clockElapsed)
-    setClockStartedAt(null)
-  }
-  function clockReset() {
-    setClockStartedAt(null)
-    setClockAccum(0)
-  }
+  function clockStart()  { setClockStartedAt(Date.now() - clockAccum * 1000) }
+  function clockPause()  { setClockAccum(clockElapsed); setClockStartedAt(null) }
+  function clockReset()  { setClockStartedAt(null); setClockAccum(0) }
 
   const todayKey = toDateKey(new Date())
-  const sessionKey = `${todayKey}-${activeDay}`
+  const todaySession = sessions[todayKey] || {}
 
-  // Most recent previous session for this day (not today)
-  function getPrevSession(dayKey) {
-    const suffix = `-${dayKey}`
-    const currentKey = `${todayKey}-${dayKey}`
+  // Most recent previous session (not today)
+  function getPrevSession() {
     const keys = Object.keys(sessions)
-      .filter(k => k.endsWith(suffix) && k !== currentKey)
+      .filter(k => k !== todayKey)
       .sort()
       .reverse()
     return keys.length > 0 ? sessions[keys[0]] : null
   }
 
-  function handleSessionChange(dayKey, data) {
-    // Autosave on every change
-    setSessions(s => ({ ...s, [`${todayKey}-${dayKey}`]: data }))
+  function handleSessionChange(data) {
+    setSessions(s => ({ ...s, [todayKey]: data }))
   }
 
-  function handleSaveToCalendar(dayKey) {
-    const existing = calendar[todayKey]
+  function handleSaveToCalendar() {
+    const durationMins = clockElapsed > 0 ? Math.round(clockElapsed / 60) : undefined
     setCalendar(c => ({
       ...c,
       [todayKey]: {
-        type: dayKey,
-        notes: existing?.notes || '',
+        type: 'workout',
+        notes: c[todayKey]?.notes || '',
+        ...(durationMins ? { duration: durationMins.toString() } : {}),
       }
     }))
     clockReset()
     setActiveView('calendar')
   }
 
-  const dayData = DAYS[activeDay]
-  const todaySession = sessions[sessionKey] || {}
-  const prevSession = getPrevSession(activeDay)
-
   return (
     <div style={{ maxWidth: '680px', margin: '0 auto', minHeight: '100vh' }}>
       {/* Header */}
       <header style={styles.header}>
-        <div style={styles.logo}>MWF <span style={{ color: 'var(--accent)' }}>Training</span></div>
+        <div style={styles.logo}>EOS <span style={{ color: 'var(--accent)' }}>Training</span></div>
         <div style={styles.navTabs}>
           <button
             style={{ ...styles.navTab, ...(activeView === 'workout' ? styles.navActive : {}) }}
@@ -125,47 +92,13 @@ export default function App() {
         </div>
       </header>
 
-      {/* Workout view — always mounted, hidden via CSS so clock never unmounts */}
+      {/* Workout view — always mounted so clock never dies */}
       <div style={{ display: activeView === 'workout' ? 'block' : 'none' }}>
-        <div style={styles.dayTabs}>
-          {DAY_KEYS.map(dk => {
-            const d = DAYS[dk]
-            const isActive = activeDay === dk
-            const color = dk === 'monday' ? 'var(--push)' : dk === 'wednesday' ? 'var(--pull)' : 'var(--legs)'
-            const colorLight = dk === 'monday' ? 'var(--push-light)' : dk === 'wednesday' ? 'var(--pull-light)' : 'var(--legs-light)'
-            const sess = sessions[`${todayKey}-${dk}`] || {}
-            const done = DAYS[dk].exercises.reduce((sum, ex) => sum + (sess[ex.id]?.doneSets || 0), 0)
-            const total = DAYS[dk].exercises.reduce((sum, ex) => sum + ex.sets, 0)
-            return (
-              <button
-                key={dk}
-                onClick={() => setActiveDay(dk)}
-                style={{
-                  ...styles.dayTab,
-                  color: isActive ? color : 'var(--muted)',
-                  background: isActive ? colorLight : 'var(--surface)',
-                  borderBottom: isActive ? `3px solid ${color}` : '3px solid transparent',
-                  boxShadow: isActive ? 'var(--shadow)' : 'none',
-                }}
-              >
-                <span style={styles.dayTabLabel}>{d.label}</span>
-                <span style={{ ...styles.dayTabName, color: isActive ? color : 'var(--text)' }}>{d.name}</span>
-                {done > 0 && (
-                  <span style={{ ...styles.dayBadge, background: color, color: '#fff' }}>
-                    {done}/{total}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-
         <WorkoutDay
-          dayData={dayData}
           todaySession={todaySession}
-          prevSession={prevSession}
-          onSessionChange={(data) => handleSessionChange(activeDay, data)}
-          onSaveToCalendar={() => handleSaveToCalendar(activeDay)}
+          prevSession={getPrevSession()}
+          onSessionChange={handleSessionChange}
+          onSaveToCalendar={handleSaveToCalendar}
           clockRunning={clockRunning}
           clockElapsed={clockElapsed}
           onClockStart={clockStart}
@@ -174,7 +107,7 @@ export default function App() {
         />
       </div>
 
-      {/* Calendar view — always mounted too */}
+      {/* Calendar view — always mounted */}
       <div style={{ display: activeView === 'calendar' ? 'block' : 'none' }}>
         <CalendarView
           calendarData={calendar}
@@ -228,50 +161,11 @@ const styles = {
     textTransform: 'uppercase',
     borderRadius: '7px',
     transition: 'all 0.15s',
+    cursor: 'pointer',
   },
   navActive: {
     background: 'var(--accent)',
     color: '#fff',
     boxShadow: 'var(--shadow)',
-  },
-  dayTabs: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    background: 'var(--surface)',
-    borderBottom: '1px solid var(--border)',
-    boxShadow: 'var(--shadow)',
-  },
-  dayTab: {
-    padding: '0.9rem 0.5rem 0.75rem',
-    textAlign: 'center',
-    border: 'none',
-    borderRight: '1px solid var(--border)',
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    transition: 'all 0.2s',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '2px',
-    position: 'relative',
-  },
-  dayTabLabel: {
-    fontSize: '0.58rem',
-    letterSpacing: '0.15em',
-    fontWeight: 500,
-    color: 'var(--muted)',
-  },
-  dayTabName: {
-    fontSize: '1.15rem',
-    lineHeight: 1,
-  },
-  dayBadge: {
-    fontSize: '0.55rem',
-    fontWeight: 700,
-    padding: '1px 5px',
-    borderRadius: '10px',
-    letterSpacing: '0.05em',
-    marginTop: '2px',
   },
 }

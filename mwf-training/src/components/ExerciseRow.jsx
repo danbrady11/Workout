@@ -2,7 +2,7 @@ import React from 'react'
 import { TAG_META } from '../data.js'
 
 export default function ExerciseRow({ exercise, sessionData, prevWeight, onChange, onSetComplete }) {
-  const tag = TAG_META[exercise.tag]
+  const tag = TAG_META[exercise.tag] || TAG_META.machine
 
   const suggestedWeight = prevWeight ? (parseFloat(prevWeight) + 2.5).toString() : ''
   const weight   = sessionData?.weight   ?? suggestedWeight
@@ -17,7 +17,7 @@ export default function ExerciseRow({ exercise, sessionData, prevWeight, onChang
     const next = i < doneSets ? i : i + 1
     const wasIncrement = next > doneSets
     update({ doneSets: next })
-    if (wasIncrement) onSetComplete() // fires rest timer
+    if (wasIncrement) onSetComplete()
   }
 
   const isAutoWeight = !sessionData?.weight && !!suggestedWeight
@@ -25,7 +25,7 @@ export default function ExerciseRow({ exercise, sessionData, prevWeight, onChang
   return (
     <div style={styles.card}>
       <div style={styles.topRow}>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={styles.name}>{exercise.name}</div>
           <div style={styles.note}>{exercise.note}</div>
         </div>
@@ -49,7 +49,6 @@ export default function ExerciseRow({ exercise, sessionData, prevWeight, onChang
                   borderColor: i < doneSets ? 'var(--accent)' : 'var(--border2)',
                   color: i < doneSets ? '#fff' : 'var(--muted)',
                 }}
-                aria-label={`Set ${i+1}`}
               >
                 {i + 1}
               </button>
@@ -123,12 +122,7 @@ const styles = {
     color: 'var(--text)',
     lineHeight: 1.2,
   },
-  note: {
-    fontSize: '0.78rem',
-    color: 'var(--muted)',
-    marginTop: '3px',
-    lineHeight: 1.4,
-  },
+  note: { fontSize: '0.78rem', color: 'var(--muted)', marginTop: '3px', lineHeight: 1.4 },
   tag: {
     flexShrink: 0,
     fontSize: '0.62rem',
@@ -138,62 +132,23 @@ const styles = {
     textTransform: 'uppercase',
     fontWeight: 600,
   },
-  inputsRow: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '0.75rem',
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  inputLabel: {
-    fontSize: '0.62rem',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase',
-    color: 'var(--muted)',
-    fontWeight: 500,
-  },
-  rangeHint: {
-    fontWeight: 400,
-    textTransform: 'none',
-    letterSpacing: 0,
-    fontSize: '0.6rem',
-  },
+  inputsRow: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' },
+  inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  inputLabel: { fontSize: '0.62rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 500 },
+  rangeHint: { fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '0.6rem' },
   dots: { display: 'flex', gap: '5px', flexWrap: 'wrap' },
   dot: {
-    width: '34px',
-    height: '34px',
-    borderRadius: '8px',
-    border: '1.5px solid',
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    fontSize: '0.9rem',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all 0.15s',
-    flexShrink: 0,
+    width: '34px', height: '34px', borderRadius: '8px', border: '1.5px solid',
+    fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    transition: 'all 0.15s', flexShrink: 0, cursor: 'pointer',
   },
   setsSub: { fontSize: '0.62rem', color: 'var(--muted)' },
   numInput: {
-    width: '100%',
-    background: 'var(--surface)',
-    border: '1.5px solid var(--border2)',
-    borderRadius: '8px',
-    color: 'var(--text)',
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    fontSize: '1.4rem',
-    textAlign: 'center',
-    padding: '8px 4px',
-    outline: 'none',
-    transition: 'border-color 0.15s, background 0.15s',
+    width: '100%', background: 'var(--surface)', border: '1.5px solid var(--border2)',
+    borderRadius: '8px', color: 'var(--text)', fontFamily: 'var(--font-display)',
+    fontWeight: 700, fontSize: '1.4rem', textAlign: 'center', padding: '8px 4px',
+    outline: 'none', transition: 'border-color 0.15s, background 0.15s',
   },
-  prevHint: {
-    fontSize: '0.65rem',
-    color: 'var(--muted)',
-    lineHeight: 1.4,
-  },
+  prevHint: { fontSize: '0.65rem', color: 'var(--muted)', lineHeight: 1.4 },
 }

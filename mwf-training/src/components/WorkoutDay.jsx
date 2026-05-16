@@ -1,11 +1,15 @@
 import React, { useMemo, useState } from 'react'
 import ExerciseRow from './ExerciseRow.jsx'
+import FinisherSection from './FinisherSection.jsx'
 import RestTimer from './RestTimer.jsx'
 import SessionClock from './SessionClock.jsx'
+import { WORKOUT } from '../data.js'
 
-export default function WorkoutDay({ dayData, todaySession, prevSession, onSessionChange, onSaveToCalendar }) {
-  const { name, focus, color, colorLight, tip, exercises } = dayData
-  const [restTrigger, setRestTrigger] = useState(0) // increments on each set complete
+const { exercises, finisher } = WORKOUT
+
+export default function WorkoutDay({ todaySession, prevSession, onSessionChange, onSaveToCalendar, clockRunning, clockElapsed, onClockStart, onClockPause, onClockReset }) {
+
+  const [restTrigger, setRestTrigger] = useState(0)
 
   const { totalSets, doneSets } = useMemo(() => {
     let total = 0, done = 0
@@ -14,13 +18,21 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
       done += Math.min(todaySession?.[ex.id]?.doneSets || 0, ex.sets)
     })
     return { totalSets: total, doneSets: done }
-  }, [exercises, todaySession])
+  }, [todaySession])
+
+  const finisherRounds = todaySession?._finisher?.completedRounds || 0
+  const finisherDone = finisherRounds >= finisher.rounds
 
   const pct = totalSets > 0 ? Math.round((doneSets / totalSets) * 100) : 0
-  const complete = pct === 100
+  const mainDone = pct === 100
+  const allDone = mainDone && finisherDone
 
   function handleExChange(exId, data) {
     onSessionChange({ ...todaySession, [exId]: data })
+  }
+
+  function handleFinisherChange(data) {
+    onSessionChange({ ...todaySession, _finisher: data })
   }
 
   function handleSetComplete() {
@@ -30,47 +42,53 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
   function handleReset() {
     if (window.confirm('Reset this session? All progress will be cleared.')) {
       onSessionChange({})
+      onClockReset()
     }
   }
 
   return (
-    <div style={{ paddingBottom: '2rem' }}>
+    <div style={{ paddingBottom: '2.5rem' }}>
       {/* Hero */}
-      <div style={{ ...styles.hero, background: colorLight, borderColor: color + '33' }}>
+      <div style={styles.hero}>
         <div>
-          <div style={{ ...styles.focus, color }}>{focus}</div>
-          <div style={styles.title}>{name} Day</div>
+          <div style={styles.heroSub}>Full Body · EOS Gym</div>
+          <div style={styles.heroTitle}>Today's Workout</div>
         </div>
         <div style={styles.heroRight}>
-          <div style={{ ...styles.statNum, color }}>~45</div>
+          <div style={styles.statNum}>~60</div>
           <div style={styles.statLbl}>min</div>
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress */}
       <div style={styles.progWrap}>
         <div style={styles.progTop}>
-          <span>Session progress</span>
+          <span>Main lifts</span>
           <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{pct}% · {doneSets}/{totalSets} sets</span>
         </div>
         <div style={styles.progTrack}>
           <div style={{ ...styles.progFill, width: `${pct}%` }} />
         </div>
-        {pct > 0 && pct < 100 && (
-          <div style={styles.autoSaveNote}>✓ Progress auto-saved</div>
-        )}
+        {doneSets > 0 && !allDone && <div style={styles.autoSave}>✓ Auto-saved</div>}
       </div>
 
       {/* Session clock */}
-      <SessionClock />
+      <SessionClock
+        running={clockRunning}
+        elapsed={clockElapsed}
+        onStart={onClockStart}
+        onPause={onClockPause}
+        onReset={onClockReset}
+      />
 
-      {/* Rest timer — only shows when active */}
+      {/* Rest timer */}
       <div style={{ marginTop: '0.75rem' }}>
         <RestTimer trigger={restTrigger} />
       </div>
 
-      {/* Exercises */}
+      {/* Main exercises */}
       <div style={styles.exSection}>
+        <div style={styles.sectionLabel}>Main Lifts</div>
         {exercises.map(ex => (
           <ExerciseRow
             key={ex.id}
@@ -83,34 +101,44 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
         ))}
       </div>
 
-      {/* Complete banner */}
-      {complete && (
-        <div style={styles.doneBanner}>
-          🎉 {name} Day Complete — Great work!
+      {/* Finisher */}
+      {mainDone && (
+        <div style={styles.exSection}>
+          <div style={{ ...styles.sectionLabel, color: 'var(--legs)' }}>KB Finisher</div>
+          <FinisherSection
+            finisherData={todaySession?._finisher}
+            onChange={handleFinisherChange}
+          />
         </div>
       )}
 
+      {/* Complete banner */}
+      {allDone && (
+        <div style={styles.doneBanner}>
+          🎉 Session Complete — Crush it!
+        </div>
+      )}
+
+      {/* Save */}
       {doneSets > 0 && (
         <button
           style={{
             ...styles.saveBtn,
-            background: complete ? 'var(--accent)' : 'var(--surface)',
-            color: complete ? '#fff' : 'var(--accent)',
+            background: allDone ? 'var(--accent)' : 'var(--surface)',
+            color: allDone ? '#fff' : 'var(--accent)',
             border: '2px solid var(--accent)',
           }}
           onClick={onSaveToCalendar}
         >
-          {complete ? '✓ Save Session to Calendar' : 'Save Progress to Calendar'}
+          {allDone ? '✓ Save Session to Calendar' : 'Save Progress to Calendar'}
         </button>
       )}
 
-      <button style={styles.resetBtn} onClick={handleReset}>
-        Reset Session
-      </button>
+      <button style={styles.resetBtn} onClick={handleReset}>Reset Session</button>
 
       <div style={styles.tip}>
-        <strong style={{ ...styles.tipLabel, color }}>Pro Tip</strong>
-        {tip}
+        <strong style={styles.tipLabel}>Tip</strong>
+        {WORKOUT.tip}
       </div>
     </div>
   )
@@ -118,21 +146,23 @@ export default function WorkoutDay({ dayData, todaySession, prevSession, onSessi
 
 const styles = {
   hero: {
-    padding: '1.25rem 1.5rem',
-    borderBottom: '1px solid',
+    padding: '1.5rem',
+    background: 'var(--accent-light)',
+    borderBottom: '1px solid var(--accent)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  focus: {
+  heroSub: {
     fontFamily: 'var(--font-display)',
     fontSize: '0.7rem',
     fontWeight: 600,
     letterSpacing: '0.2em',
     textTransform: 'uppercase',
+    color: 'var(--accent)',
     marginBottom: '4px',
   },
-  title: {
+  heroTitle: {
     fontFamily: 'var(--font-display)',
     fontWeight: 900,
     fontSize: 'clamp(1.8rem, 5vw, 2.5rem)',
@@ -141,54 +171,34 @@ const styles = {
     color: 'var(--text)',
   },
   heroRight: { textAlign: 'right' },
-  statNum: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    fontSize: '2rem',
-    lineHeight: 1,
-  },
-  statLbl: {
-    fontSize: '0.6rem',
-    letterSpacing: '0.15em',
-    textTransform: 'uppercase',
-    color: 'var(--muted)',
-  },
+  statNum: { fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '2rem', color: 'var(--accent)', lineHeight: 1 },
+  statLbl: { fontSize: '0.6rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--muted)' },
   progWrap: {
     padding: '1rem 1.5rem',
     background: 'var(--surface)',
     borderBottom: '1px solid var(--border)',
   },
   progTop: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '0.7rem',
-    letterSpacing: '0.08em',
-    color: 'var(--muted)',
-    marginBottom: '8px',
+    display: 'flex', justifyContent: 'space-between',
+    fontSize: '0.7rem', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: '8px',
   },
-  progTrack: {
-    height: '6px',
-    background: 'var(--border)',
-    borderRadius: '3px',
-    overflow: 'hidden',
-  },
-  progFill: {
-    height: '100%',
-    background: 'var(--accent)',
-    borderRadius: '3px',
-    transition: 'width 0.3s ease',
-  },
-  autoSaveNote: {
+  progTrack: { height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' },
+  progFill: { height: '100%', background: 'var(--accent)', borderRadius: '3px', transition: 'width 0.3s ease' },
+  autoSave: { fontSize: '0.65rem', color: 'var(--accent)', marginTop: '6px', fontWeight: 500 },
+  exSection: { padding: '0.75rem 1.25rem 0' },
+  sectionLabel: {
+    fontFamily: 'var(--font-display)',
+    fontWeight: 700,
     fontSize: '0.65rem',
+    letterSpacing: '0.2em',
+    textTransform: 'uppercase',
     color: 'var(--accent)',
-    marginTop: '6px',
-    fontWeight: 500,
-  },
-  exSection: {
-    padding: '0.75rem 1.25rem 0',
+    marginBottom: '0.6rem',
+    paddingBottom: '0.4rem',
+    borderBottom: '1px solid var(--border)',
   },
   doneBanner: {
-    margin: '0.5rem 1.25rem 0',
+    margin: '0.75rem 1.25rem 0',
     padding: '1rem',
     background: 'var(--accent-light)',
     border: '1px solid var(--accent)',
@@ -213,6 +223,7 @@ const styles = {
     borderRadius: 'var(--radius)',
     transition: 'all 0.2s',
     boxShadow: 'var(--shadow)',
+    cursor: 'pointer',
   },
   resetBtn: {
     display: 'block',
@@ -228,6 +239,7 @@ const styles = {
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
     borderRadius: 'var(--radius)',
+    cursor: 'pointer',
   },
   tip: {
     margin: '1rem 1.25rem 0',
@@ -244,6 +256,7 @@ const styles = {
     fontSize: '0.6rem',
     letterSpacing: '0.2em',
     textTransform: 'uppercase',
+    color: 'var(--accent)',
     marginBottom: '4px',
     fontWeight: 700,
   },
